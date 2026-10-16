@@ -1,0 +1,87 @@
+# Reglas de normalización lingüística para TTS en español.
+# Editables por el usuario sin tocar código.
+
+abbreviations:
+  "Sr.": "Señor"
+  "Sra.": "Señora"
+  "Dr.": "Doctor"
+  "Dra.": "Doctora"
+  "Prof.": "Profesor"
+  "Ing.": "Ingeniero"
+  "Lic.": "Licenciado"
+  "Arq.": "Arquitecto"
+  "Gral.": "General"
+  "Cnel.": "Coronel"
+  "Cap.": "Capitán"
+  "Tte.": "Teniente"
+  "Sgto.": "Sargento"
+  "Ud.": "Usted"
+  "Uds.": "Ustedes"
+  "Vd.": "Usted"
+  "etc.": "etcétera"
+  "p.ej.": "por ejemplo"
+  "ej.": "ejemplo"
+  "pág.": "página"
+  "págs.": "páginas"
+  "vol.": "volumen"
+  "cap.": "capítulo"
+  "núm.": "número"
+  "Nº": "número"
+  "nº": "número"
+  "Av.": "Avenida"
+  "EE.UU.": "Estados Unidos"
+  "S.A.": "Sociedad Anónima"
+  "S.L.": "Sociedad Limitada"
+
+symbols:
+  "€": " euros"
+  "$": " dólares"
+  "£": " libras"
+  "¥": " yenes"
+  "%": " por ciento"
+  "&": " y "
+  "@": " arroba "
+  "#": " número "
+  "©": " copyright "
+  "®": " marca registrada "
+  "™": " marca comercial "
+  "°": " grados "
+  "°C": " grados centígrados"
+  "°F": " grados Fahrenheit"
+  "km/h": " kilómetros por hora"
+  "m/s": " metros por segundo"
+  "kg": " kilogramos"
+  "cm": " centímetros"
+  "mm": " milímetros"
+  "km": " kilómetros"
+
+# Siglas que deben deletrearse (separar letras)
+spell_acronyms:
+  - "ONU"
+  - "OTAN"
+  - "FBI"
+  - "CIA"
+  - "NASA"
+  - "OMS"
+  - "FMI"
+  - "PIB"
+  - "IVA"
+  - "DNI"
+  - "PDF"
+  - "CEO"
+  - "CTO"
+  - "IA"
+  - "IT"
+  - "EEUU"
+
+# Patrones regex de artefactos a eliminar del texto
+artifacts_patterns:
+  - "^\\d{1,4}$"                    # Números sueltos (páginas)
+  - "^-\\s*\\d+\\s*-$"              # — 42 —
+  - "^Página\\s+\\d+"               # Página 42
+  - "^Page\\s+\\d+"                 # Page 42
+  - "^\\[\\d+\\]$"                  # [42]
+  - "^\\.{3,}$"                     # Líneas de puntos
+  - "^_{3,}$"                       # Líneas de guiones bajos
+  - "^-{3,}$"                       # Líneas de guiones
+  - "^={3,}$"                       # Líneas de signos iguales

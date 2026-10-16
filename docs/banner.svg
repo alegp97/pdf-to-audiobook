@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="520" viewBox="0 0 1440 520" role="img" aria-labelledby="title description">
+  <title id="title">PDF to Audiobook</title>
+  <desc id="description">Your reading list. Now listenable. A PDF becomes a waveform and an MP3.</desc>
+  <defs>
+    <linearGradient id="background" x2="1" y2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="#042F2E"/></linearGradient>
+    <linearGradient id="accent"><stop stop-color="#5EEAD4"/><stop offset="1" stop-color="#A3E635"/></linearGradient>
+  </defs>
+  <rect width="1440" height="520" rx="24" fill="url(#background)"/>
+  <circle cx="1280" cy="55" r="215" fill="#14B8A6" opacity=".07"/>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <text x="80" y="98" fill="#5EEAD4" font-size="20" font-weight="700" letter-spacing="5">PDF TO AUDIOBOOK</text>
+    <text x="80" y="185" fill="#F8FAFC" font-size="58" font-weight="750">Your reading list.</text>
+    <text x="80" y="259" fill="#F8FAFC" font-size="58" font-weight="750">Now listenable.</text>
+    <text x="83" y="321" fill="#CBD5E1" font-size="23">Readable PDFs. Natural voices. Verified MP3s.</text>
+    <rect x="82" y="379" width="333" height="50" rx="25" fill="#5EEAD4"/>
+    <text x="108" y="411" fill="#042F2E" font-size="18" font-weight="700">PYTHON CLI + AGENT SKILL</text>
+    <g transform="translate(875 153)">
+      <rect x="0" y="0" width="130" height="168" rx="14" fill="#F8FAFC"/>
+      <path d="M85 0v41h45" fill="#B2DFDB"/>
+      <text x="27" y="80" fill="#0F766E" font-size="31" font-weight="750">PDF</text>
+      <path d="M27 109h73M27 126h73M27 143h44" fill="none" stroke="#94A3B8" stroke-width="5" stroke-linecap="round"/>
+      <path d="M152 84h46m-12-12 12 12-12 12" fill="none" stroke="#5EEAD4" stroke-width="5" stroke-linecap="round"/>
+      <g stroke="url(#accent)" stroke-width="9" stroke-linecap="round">
+        <path d="M229 67v34M247 45v78M265 26v116M283 53v62M301 6v156M319 38v92M337 56v55M355 28v110M373 62v44"/>
+      </g>
+      <text x="251" y="214" fill="#5EEAD4" font-size="23" font-weight="700" letter-spacing="4">MP3</text>
+    </g>
+  </g>
+</svg>

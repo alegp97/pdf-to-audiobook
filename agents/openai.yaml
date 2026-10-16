@@ -1,0 +1,4 @@
+interface:
+  display_name: "PDF to Audiobook"
+  short_description: "Convert PDFs to MP3 or open the desktop voice menu"
+  default_prompt: "Use $pdf-to-audiobook to open the desktop menu, or narrate my attached PDFs in their original language."

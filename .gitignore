@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+outputs/
+work/
+*.pdf
+*.mp3
+*.wav
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db

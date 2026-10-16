@@ -1,0 +1,8 @@
+PyMuPDF>=1.24,<2
+edge-tts>=7.3,<8
+pydub==0.25.1
+num2words>=0.5,<1
+PyYAML>=6,<7
+audioop-lts>=0.2; python_version >= "3.13"
+imageio-ffmpeg>=0.5,<1
+pywin32>=308; sys_platform == "win32"
