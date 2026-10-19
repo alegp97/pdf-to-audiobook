@@ -31,3 +31,14 @@ def ensure_user_data_dir() -> Path:
     path = user_data_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def default_output_dir() -> Path:
+    """Return the user's Desktop when available, otherwise their home folder."""
+    desktop = Path.home() / "Desktop"
+    return desktop if desktop.is_dir() else Path.home()
+
+
+def default_output_path(source_pdf: str | Path) -> Path:
+    """Return the proposed Desktop MP3 path for a selected PDF."""
+    return default_output_dir() / f"{Path(source_pdf).stem}.mp3"

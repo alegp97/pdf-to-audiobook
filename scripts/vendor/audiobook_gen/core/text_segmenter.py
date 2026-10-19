@@ -8,7 +8,7 @@ respetando límites de oración, párrafos y capítulos.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from audiobook_gen.config import SegmenterConfig
@@ -25,6 +25,9 @@ class TextChunk:
     chapter: Optional[str] = None
     is_chapter_start: bool = False
     is_chapter_end: bool = False
+    previous_text: Optional[str] = None
+    next_text: Optional[str] = None
+    alignment: list[tuple[str, float, float]] = field(default_factory=list)
 
     @property
     def char_count(self) -> int:
@@ -63,35 +66,16 @@ class TextSegmenter:
         sections = self._split_by_chapters(text)
 
         for section_chapter, section_text in sections:
-            paragraphs = self._split_paragraphs(section_text)
-
             first_in_chapter = True
-            for para_idx, paragraph in enumerate(paragraphs):
-                paragraph = paragraph.strip()
-                if not paragraph:
-                    continue
-
-                if len(paragraph) <= self.config.max_chunk_chars:
-                    chunks.append(TextChunk(
-                        text=paragraph,
-                        index=chunk_index,
-                        chapter=section_chapter,
-                        is_chapter_start=first_in_chapter,
-                    ))
-                    chunk_index += 1
-                    first_in_chapter = False
-                else:
-                    # Párrafo largo → dividir por oraciones
-                    sub_chunks = self._split_long_paragraph(paragraph)
-                    for sub in sub_chunks:
-                        chunks.append(TextChunk(
-                            text=sub,
-                            index=chunk_index,
-                            chapter=section_chapter,
-                            is_chapter_start=first_in_chapter,
-                        ))
-                        chunk_index += 1
-                        first_in_chapter = False
+            for sub in self._split_section(section_text):
+                chunks.append(TextChunk(
+                    text=sub,
+                    index=chunk_index,
+                    chapter=section_chapter,
+                    is_chapter_start=first_in_chapter,
+                ))
+                chunk_index += 1
+                first_in_chapter = False
 
             # Marcar el último chunk del capítulo
             if chunks and section_chapter:
@@ -106,6 +90,8 @@ class TextSegmenter:
         # Re-indexar
         for i, ch in enumerate(chunks):
             ch.index = i
+            ch.previous_text = chunks[i - 1].text if i > 0 else None
+            ch.next_text = chunks[i + 1].text if i + 1 < len(chunks) else None
 
         log.info(
             "Segmentation complete — %d chunks, average %d characters",
@@ -171,6 +157,74 @@ class TextSegmenter:
         if current:
             chunks.append(" ".join(current))
 
+        return chunks
+
+    def _split_section(self, text: str) -> list[str]:
+        """Build long speech requests and ignore layout-only paragraph boundaries.
+
+        PDF paragraph breaks often reflect page layout rather than spoken pauses. The
+        section is therefore treated as continuous prose and split at sentence ends.
+        Only an exceptionally long sentence falls back to clause/word boundaries.
+        """
+        continuous = re.sub(r"\s+", " ", text).strip()
+        if not continuous:
+            return []
+        if not self.config.respect_sentence_boundaries:
+            return self._split_by_length(continuous)
+
+        units: list[str] = []
+        for sentence in SENTENCE_SPLIT.split(continuous):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            if len(sentence) <= self.config.max_chunk_chars:
+                units.append(sentence)
+            else:
+                units.extend(self._split_oversized_sentence(sentence))
+
+        chunks: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for unit in units:
+            added = len(unit) + (1 if current else 0)
+            if current and current_len + added > self.config.max_chunk_chars:
+                chunks.append(" ".join(current))
+                current = [unit]
+                current_len = len(unit)
+            else:
+                current.append(unit)
+                current_len += added
+        if current:
+            chunks.append(" ".join(current))
+        return chunks
+
+    def _split_oversized_sentence(self, sentence: str) -> list[str]:
+        """Prefer commas/semicolons before the unavoidable word-boundary fallback."""
+        clauses = [part.strip() for part in re.split(r"(?<=[,;:])\s+", sentence) if part.strip()]
+        if len(clauses) == 1:
+            return self._split_by_length(sentence)
+
+        chunks: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for clause in clauses:
+            if len(clause) > self.config.max_chunk_chars:
+                if current:
+                    chunks.append(" ".join(current))
+                    current = []
+                    current_len = 0
+                chunks.extend(self._split_by_length(clause))
+                continue
+            added = len(clause) + (1 if current else 0)
+            if current and current_len + added > self.config.max_chunk_chars:
+                chunks.append(" ".join(current))
+                current = [clause]
+                current_len = len(clause)
+            else:
+                current.append(clause)
+                current_len += added
+        if current:
+            chunks.append(" ".join(current))
         return chunks
 
     def _split_by_length(self, text: str) -> list[str]:

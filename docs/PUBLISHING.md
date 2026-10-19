@@ -8,7 +8,7 @@ Suggested description:
 
 > Give your PDFs a voice. A portable agent skill and Python CLI for turning readable PDFs into verified MP3 audiobooks.
 
-Suggested topics: `pdf`, `audiobook`, `text-to-speech`, `edge-tts`, `python`, `agent-skills`, `codex`, `accessibility`.
+Suggested topics: `pdf`, `audiobook`, `text-to-speech`, `edge-tts`, `elevenlabs`, `python`, `agent-skills`, `codex`, `accessibility`.
 
 ## Create the repository
 
@@ -30,9 +30,9 @@ Alternatively, create an empty public repository on GitHub and follow its instru
 After CI passes, tag a release and attach the source ZIP:
 
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
-gh release create v1.1.0 --title "PDF to Audiobook 1.1 — Desktop Menu" --notes-file docs/RELEASE_NOTES.md
+git tag v1.2.0
+git push origin v1.2.0
+gh release create v1.2.0 --title "PDF to Audiobook 1.2 — ElevenLabs Integration" --notes-file docs/RELEASE_NOTES.md
 ```
 
 Use a repository source archive or the prepared ZIP; do not upload virtual environments, PDF documents, generated personal audio, or local work folders.

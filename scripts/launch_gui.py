@@ -46,7 +46,7 @@ def show_window(args, state_dir: Path) -> int:
     config = state_dir / "config.yaml"
     app = QApplication([sys.argv[0]])
     app.setApplicationName("PDF to Audiobook")
-    app.setApplicationVersion("1.1.0")
+    app.setApplicationVersion("1.2.0")
     cache = state_dir / "cache"
     cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="gui-", dir=cache) as temp:
