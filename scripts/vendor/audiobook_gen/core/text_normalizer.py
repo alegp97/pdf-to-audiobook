@@ -93,6 +93,10 @@ class TextNormalizer:
 
     def _remove_artifacts(self, text: str) -> str:
         """Elimina artefactos residuales usando patrones regex."""
+        # Meeting-transcript timestamps interrupt narration and add no spoken value.
+        text = re.sub(r"\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)", "", text)
+        # Remove invisible layout characters commonly copied from web/PDF exports.
+        text = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", text)
         for pattern in self.artifact_patterns:
             text = pattern.sub("", text)
         return text

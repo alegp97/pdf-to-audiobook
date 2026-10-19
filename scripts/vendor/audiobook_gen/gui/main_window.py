@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from audiobook_gen.config import Settings
+from audiobook_gen.paths import default_output_path
 from audiobook_gen.pipeline import AudioBookPipeline, PipelineProgress, PipelineResult, PipelineState
 from audiobook_gen.utils.logger import get_logger
 from audiobook_gen.voices import (
@@ -32,6 +33,7 @@ from audiobook_gen.voices import (
 )
 from audiobook_gen.core.pdf_analyzer import PdfAnalyzer, PdfAnalysis
 from audiobook_gen.core.pdf_extractor import SCANNED_PDF_MESSAGE
+from audiobook_gen.core.tts_engine import list_elevenlabs_voices, load_elevenlabs_api_key
 
 log = get_logger("main_window")
 
@@ -159,7 +161,7 @@ class AudioPreviewWorker(QThread):
                 pythoncom.CoUninitialize()
 
 class MainWindow(QMainWindow):
-    ENGINE_IDS = ["edge", "kokoro", "piper", "sapi"]
+    ENGINE_IDS = ["edge", "elevenlabs", "kokoro", "piper", "sapi"]
 
     def __init__(self, settings: Optional[Settings] = None, config_path: Optional[str | Path] = None) -> None:
         super().__init__()
@@ -172,6 +174,8 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self._pdf_path = None
         self._pdf_analysis: Optional[PdfAnalysis] = None
+        self._elevenlabs_voice_cache: Optional[list[dict[str, str]]] = None
+        self._elevenlabs_voice_error = ""
         self._init_ui()
         self._restore_tts_preferences()
         self._connect_signals()
@@ -249,12 +253,13 @@ class MainWindow(QMainWindow):
         self.combo_engine = QComboBox()
         self.combo_engine.addItems([
             "Natural Online Voice (Highest Quality)",
+            "ElevenLabs Voice (API Key)",
             "Offline Neural Voice (High Quality)",
             "Fast Offline Voice (Lightweight)",
             "Basic System Voice (Windows Default)"
         ])
         if os.name != "nt":
-            self.combo_engine.model().item(3).setEnabled(False)
+            self.combo_engine.model().item(4).setEnabled(False)
         tts_layout.addWidget(self.combo_engine)
 
         self.lbl_engine_desc = QLabel("")
@@ -349,6 +354,7 @@ class MainWindow(QMainWindow):
         self.combo_lang.currentIndexChanged.connect(self._on_language_changed)
         self.combo_engine.currentIndexChanged.connect(self._on_engine_changed)
         self.combo_voice.currentIndexChanged.connect(self._save_preferences)
+        self.combo_voice.currentTextChanged.connect(self._save_preferences)
         self.combo_bitrate.currentIndexChanged.connect(self._save_preferences)
         self.btn_preview.clicked.connect(self._on_preview)
         self.btn_generate.clicked.connect(self._on_generate)
@@ -378,7 +384,7 @@ class MainWindow(QMainWindow):
             return 0
 
     def _language_for_voice(self, voice_id: str, engine_idx: int) -> Optional[str]:
-        voice_groups = [EDGE_VOICES, KOKORO_VOICES, PIPER_VOICES, {}]
+        voice_groups = [EDGE_VOICES, {}, KOKORO_VOICES, PIPER_VOICES, {}]
         for language, voices in voice_groups[engine_idx].items():
             if any(v.id == voice_id for v in voices):
                 return language
@@ -404,7 +410,7 @@ class MainWindow(QMainWindow):
 
         self.settings.tts.engine = self.ENGINE_IDS[self.combo_engine.currentIndex()]
         self.settings.tts.language = self.combo_lang.currentText()
-        voice_id = self.combo_voice.currentData()
+        voice_id = self._selected_voice_id()
         if voice_id:
             self.settings.tts.voice = voice_id
         self.settings.audio.mp3_bitrate = self.combo_bitrate.currentText()
@@ -432,10 +438,9 @@ class MainWindow(QMainWindow):
         self.lbl_pdf_path.setText(Path(path).name)
         self.lbl_pdf_path.setStyleSheet("color: #00c853; border: 2px solid #00c853; border-radius: 10px; padding: 20px; font-weight: bold;")
 
-        # Propose output name if empty or just updated PDF
+        # Propose a convenient Desktop destination; the user can choose another.
         if not self.edit_output.text() or self.edit_output.text().endswith(".mp3"):
-            output_name = Path(path).stem + ".mp3"
-            self.edit_output.setText(str(Path(path).parent / output_name))
+            self.edit_output.setText(str(default_output_path(path)))
 
         self.lbl_status.setText("Analyzing document...")
         self.analysis_frame.setVisible(False)
@@ -475,6 +480,7 @@ class MainWindow(QMainWindow):
         idx = self.combo_engine.currentIndex()
         descs = [
             "Best quality. Requires internet and sends text fragments to an external TTS service.",
+            "Premium online voice. Requires ELEVENLABS_API_KEY and may use paid API credits.",
             "High-quality offline voice. Place Kokoro files manually in the models folder.",
             "Lightweight local voice. Place Piper files manually in the models folder.",
             "Windows fallback voice. Works offline but may sound robotic."
@@ -485,22 +491,62 @@ class MainWindow(QMainWindow):
         self._save_preferences()
 
     def _populate_voices(self):
+        configured_engine = self.settings.tts.engine
+        configured_voice = self.settings.tts.voice
         self.combo_voice.clear()
         lang, eng_idx = self.combo_lang.currentText(), self.combo_engine.currentIndex()
-        if eng_idx == 0: voices = EDGE_VOICES.get(lang, [])
-        elif eng_idx == 1: voices = KOKORO_VOICES.get(lang, [])
-        elif eng_idx == 2: voices = PIPER_VOICES.get(lang, [])
-        else: self.combo_voice.addItem("System Default Voice", "System Default"); return
+        self.combo_voice.setEditable(eng_idx == 1)
+        if eng_idx == 0:
+            voices = EDGE_VOICES.get(lang, [])
+        elif eng_idx == 1:
+            self.combo_voice.setPlaceholderText("Loading ElevenLabs voices...")
+            if self._elevenlabs_voice_cache is None and not self._elevenlabs_voice_error:
+                try:
+                    self._elevenlabs_voice_cache = list_elevenlabs_voices()
+                except Exception as exc:
+                    self._elevenlabs_voice_error = str(exc)
+
+            if self._elevenlabs_voice_cache:
+                for voice in self._elevenlabs_voice_cache:
+                    label = voice["name"]
+                    if voice.get("category"):
+                        label += f" — {voice['category']}"
+                    self.combo_voice.addItem(label, voice["id"])
+                if configured_engine == "elevenlabs":
+                    self._set_combo_data(self.combo_voice, configured_voice)
+                self.combo_voice.setPlaceholderText("Select an ElevenLabs voice")
+            else:
+                self.combo_voice.setPlaceholderText("Enter an ElevenLabs voice ID")
+                if configured_engine == "elevenlabs":
+                    self.combo_voice.setEditText(configured_voice)
+            return
+        elif eng_idx == 2:
+            voices = KOKORO_VOICES.get(lang, [])
+        elif eng_idx == 3:
+            voices = PIPER_VOICES.get(lang, [])
+        else:
+            self.combo_voice.addItem("System Default Voice", "System Default")
+            return
         
         for v in voices:
             label = v.display_name
-            if eng_idx == 1 and not is_kokoro_installed(): 
+            if eng_idx == 2 and not is_kokoro_installed():
                 label += " [Missing local model]"
-            elif eng_idx == 2 and not is_piper_voice_installed(v.id): 
+            elif eng_idx == 3 and not is_piper_voice_installed(v.id):
                 label += " [Missing local voice]"
             self.combo_voice.addItem(label, v.id)
 
+    def _selected_voice_id(self) -> str:
+        return str(self.combo_voice.currentData() or self.combo_voice.currentText()).strip()
+
     def _validate_voice_available(self, engine: str, voice_id: str) -> bool:
+        if engine == "elevenlabs" and not load_elevenlabs_api_key():
+            QMessageBox.warning(
+                self,
+                "ElevenLabs API key required",
+                "Set ELEVENLABS_API_KEY before opening the desktop menu.",
+            )
+            return False
         if engine == "kokoro" and not is_kokoro_installed():
             QMessageBox.warning(
                 self,
@@ -520,11 +566,27 @@ class MainWindow(QMainWindow):
     def _update_manual_model_hint(self):
         idx = self.combo_engine.currentIndex()
         if idx == 1:
+            if self._elevenlabs_voice_cache:
+                self.lbl_manual_models.setText(
+                    f"{len(self._elevenlabs_voice_cache)} account voices loaded from ElevenLabs. "
+                    "The API key is never saved in the menu settings."
+                )
+            elif self._elevenlabs_voice_error:
+                self.lbl_manual_models.setText(
+                    "Could not load the ElevenLabs voice list. You can still enter a voice ID manually. "
+                    f"{self._elevenlabs_voice_error}"
+                )
+            else:
+                self.lbl_manual_models.setText(
+                    "Choose a voice from your ElevenLabs account. "
+                    "The API key is read privately and is never saved here."
+                )
+        elif idx == 2:
             self.lbl_manual_models.setText(
                 f"Kokoro folder: {kokoro_model_dir()} "
                 "(requires kokoro-v1.0.onnx and voices-v1.0.bin)"
             )
-        elif idx == 2:
+        elif idx == 3:
             self.lbl_manual_models.setText(
                 f"Piper folder: {piper_model_dir()} "
                 "(requires <voice>.onnx and <voice>.onnx.json)"
@@ -533,7 +595,7 @@ class MainWindow(QMainWindow):
             self.lbl_manual_models.setText("")
 
     def _on_preview(self):
-        v_id, eng_idx = self.combo_voice.currentData(), self.combo_engine.currentIndex()
+        v_id, eng_idx = self._selected_voice_id(), self.combo_engine.currentIndex()
         engine = self.ENGINE_IDS[eng_idx]
         if not v_id:
             QMessageBox.warning(self, "Voice required", "Please select a voice first.")
@@ -574,7 +636,7 @@ class MainWindow(QMainWindow):
             return
 
         engine = self.ENGINE_IDS[self.combo_engine.currentIndex()]
-        voice_id = self.combo_voice.currentData()
+        voice_id = self._selected_voice_id()
         if not voice_id:
             QMessageBox.warning(self, "Voice required", "Please select a voice first.")
             return

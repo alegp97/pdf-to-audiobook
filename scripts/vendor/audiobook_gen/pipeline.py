@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import time
 import concurrent.futures
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional
@@ -164,7 +164,10 @@ class AudioBookPipeline:
             # ── Phase 5: Segmentation ──
             base_progress = 0.20
             self._emit_progress(PipelineState.SEGMENTING, base_progress)
-            segmenter = TextSegmenter(self.settings.segmenter)
+            segmenter_config = replace(self.settings.segmenter)
+            if self.settings.tts.engine == "elevenlabs":
+                segmenter_config.max_chunk_chars = self.settings.tts.elevenlabs_chunk_chars
+            segmenter = TextSegmenter(segmenter_config)
             chunks = segmenter.segment(normalized_text)
             log.info("Text segmented into %d chunks", len(chunks))
             if not chunks:
@@ -245,7 +248,10 @@ class AudioBookPipeline:
             # ── Phase 7: Assembly ──
             base_progress = 0.90
             self._emit_progress(PipelineState.ASSEMBLING, base_progress)
-            assembler = AudioAssembler(self.settings.audio)
+            assembler = AudioAssembler(
+                self.settings.audio,
+                trim_chunk_edges=self.settings.tts.engine == "elevenlabs",
+            )
             assembler.assemble([path for path in temp_audio_files if path], chunks, output_path)
             self._check_cancelled()
 

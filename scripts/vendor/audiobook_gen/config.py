@@ -19,12 +19,16 @@ import yaml
 class TTSConfig:
     """Configuración del motor de síntesis de voz."""
 
-    engine: str = "edge"  # "edge" | "sapi"
+    engine: str = "edge"  # "edge" | "elevenlabs" | "kokoro" | "piper" | "sapi"
     language: str = "Spanish"
     voice: str = "es-ES-AlvaroNeural"
     rate: str = "+0%"      # p.ej. "+10%", "-5%"
     pitch: str = "+0Hz"    # p.ej. "+5Hz", "-2Hz"
     volume: str = "+0%"
+    elevenlabs_model: str = "eleven_multilingual_v2"
+    elevenlabs_output_format: str = "mp3_44100_128"
+    elevenlabs_chunk_chars: int = 9000
+    elevenlabs_context_chars: int = 500
 
 
 @dataclass
@@ -35,6 +39,10 @@ class AudioConfig:
     sample_rate: int = 24000
     silence_paragraph_ms: int = 200   # pausa tras punto/oración completa
     silence_chapter_ms: int = 1800
+    elevenlabs_edge_silence_ms: int = 0
+    elevenlabs_phrase_pause_ms: int = 120
+    elevenlabs_sentence_pause_ms: int = 320
+    elevenlabs_inter_chunk_pause_ms: int = 0
     normalize_target_dbfs: float = -20.0
     save_intermediate_wav: bool = False
 
@@ -121,12 +129,20 @@ class Settings:
                 "rate": self.tts.rate,
                 "pitch": self.tts.pitch,
                 "volume": self.tts.volume,
+                "elevenlabs_model": self.tts.elevenlabs_model,
+                "elevenlabs_output_format": self.tts.elevenlabs_output_format,
+                "elevenlabs_chunk_chars": self.tts.elevenlabs_chunk_chars,
+                "elevenlabs_context_chars": self.tts.elevenlabs_context_chars,
             },
             "audio": {
                 "mp3_bitrate": self.audio.mp3_bitrate,
                 "sample_rate": self.audio.sample_rate,
                 "silence_paragraph_ms": self.audio.silence_paragraph_ms,
                 "silence_chapter_ms": self.audio.silence_chapter_ms,
+                "elevenlabs_edge_silence_ms": self.audio.elevenlabs_edge_silence_ms,
+                "elevenlabs_phrase_pause_ms": self.audio.elevenlabs_phrase_pause_ms,
+                "elevenlabs_sentence_pause_ms": self.audio.elevenlabs_sentence_pause_ms,
+                "elevenlabs_inter_chunk_pause_ms": self.audio.elevenlabs_inter_chunk_pause_ms,
                 "normalize_target_dbfs": self.audio.normalize_target_dbfs,
                 "save_intermediate_wav": self.audio.save_intermediate_wav,
             },

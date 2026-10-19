@@ -2,6 +2,7 @@
 Voice Synthesis Engine (TTS).
 Abstractions with implementations:
 - EdgeTTSEngine:  Online neural voices through Edge-TTS (primary)
+- ElevenLabsEngine: Premium online voices through the ElevenLabs API
 - KokoroEngine:   Lightweight ONNX model (offline)
 - PiperEngine:    Ultra-fast synthesis (offline)
 - SAPIEngine:     Local fallback using Windows SAPI5 COM
@@ -10,10 +11,14 @@ Abstractions with implementations:
 from __future__ import annotations
 
 import asyncio
+import base64
+import os
 import wave
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from pydub import AudioSegment
 
 from audiobook_gen.config import TTSConfig
@@ -21,6 +26,27 @@ from audiobook_gen.core.text_segmenter import TextChunk
 from audiobook_gen.utils.logger import get_logger
 
 log = get_logger("tts_engine")
+
+
+def skill_env_path() -> Path:
+    """Return the private .env file at the root of this skill/repository."""
+    return Path(__file__).resolve().parents[4] / ".env"
+
+
+def load_elevenlabs_api_key(env_path: Optional[Path] = None) -> str:
+    """Load the ElevenLabs key without overriding an existing process value."""
+    load_dotenv(dotenv_path=env_path or skill_env_path(), override=False)
+    return os.environ.get("ELEVENLABS_API_KEY", "").strip()
+
+
+def _elevenlabs_error_message(exc: Exception) -> str:
+    """Return the actionable API message without dumping response headers."""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        detail = body.get("detail", body)
+        if isinstance(detail, dict) and detail.get("message"):
+            return str(detail["message"])
+    return str(exc)
 
 class TTSEngine(ABC):
     def __init__(self, config: TTSConfig, voice_id: str) -> None:
@@ -72,6 +98,119 @@ class EdgeTTSEngine(TTSEngine):
                 f"selected voice ({self.voice_id}) is listed in the repository but it is not currently available for synthesis. Try selecting a different voice."
             ) from exc
         return output_path
+
+
+class ElevenLabsEngine(TTSEngine):
+    """Synthesize MP3 chunks with the official ElevenLabs Python SDK."""
+
+    def __init__(self, config: TTSConfig, voice_id: str):
+        api_key = load_elevenlabs_api_key()
+        if not api_key:
+            raise RuntimeError(
+                "ElevenLabs requires ELEVENLABS_API_KEY. Set the environment variable "
+                "or add it to the private .env file at the skill root."
+            )
+        if not voice_id:
+            raise ValueError("ElevenLabs requires a voice ID.")
+        try:
+            from elevenlabs.client import ElevenLabs
+        except ImportError as exc:
+            raise RuntimeError(
+                "ElevenLabs support requires the optional package 'elevenlabs'. "
+                "Install scripts/requirements.txt."
+            ) from exc
+        super().__init__(config, voice_id)
+        self.client = ElevenLabs(api_key=api_key)
+        self._request_ids: list[str] = []
+
+    def synthesize(self, chunk: TextChunk, output_path: str) -> str:
+        if not chunk.text.strip():
+            return self._synthesize_empty(output_path)
+        try:
+            context_chars = max(0, self.config.elevenlabs_context_chars)
+            previous_text = (
+                chunk.previous_text[-context_chars:]
+                if chunk.previous_text and context_chars
+                else None
+            )
+            next_text = (
+                chunk.next_text[:context_chars]
+                if chunk.next_text and context_chars
+                else None
+            )
+            supports_request_stitching = not self.config.elevenlabs_model.startswith("eleven_v3")
+            previous_request_ids = self._request_ids[-3:] if supports_request_stitching else []
+            previous_request_ids = previous_request_ids or None
+            raw_response = self.client.text_to_speech.with_raw_response.convert_with_timestamps(
+                voice_id=self.voice_id,
+                text=chunk.text,
+                model_id=self.config.elevenlabs_model,
+                output_format=self.config.elevenlabs_output_format,
+                previous_text=None if previous_request_ids else previous_text,
+                next_text=next_text,
+                previous_request_ids=previous_request_ids,
+            )
+            try:
+                response = raw_response.data
+                request_id = raw_response.headers.get("request-id")
+                if request_id:
+                    self._request_ids.append(request_id)
+                alignment = response.alignment or response.normalized_alignment
+                if alignment:
+                    chunk.alignment = list(zip(
+                        alignment.characters,
+                        alignment.character_start_times_seconds,
+                        alignment.character_end_times_seconds,
+                    ))
+                with open(output_path, "wb") as stream:
+                    stream.write(base64.b64decode(response.audio_base_64))
+            finally:
+                raw_response.close()
+        except Exception as exc:
+            raise RuntimeError(
+                f"ElevenLabs synthesis failed for voice '{self.voice_id}': "
+                f"{_elevenlabs_error_message(exc)}"
+            ) from exc
+        return output_path
+
+
+def list_elevenlabs_voices() -> list[dict[str, str]]:
+    """Return every voice visible to the configured ElevenLabs account."""
+    api_key = load_elevenlabs_api_key()
+    if not api_key:
+        raise RuntimeError(
+            "ElevenLabs requires ELEVENLABS_API_KEY in the environment or skill .env file."
+        )
+    try:
+        from elevenlabs.client import ElevenLabs
+    except ImportError as exc:
+        raise RuntimeError(
+            "ElevenLabs support requires the optional package 'elevenlabs'."
+        ) from exc
+
+    client = ElevenLabs(api_key=api_key)
+    voices: list[dict[str, str]] = []
+    next_page_token = None
+    while True:
+        page = client.voices.search(
+            page_size=100,
+            next_page_token=next_page_token,
+            sort="name",
+            sort_direction="asc",
+            include_total_count=False,
+        )
+        voices.extend(
+            {
+                "id": voice.voice_id,
+                "name": voice.name,
+                "category": getattr(voice, "category", None) or "",
+            }
+            for voice in page.voices
+        )
+        if not page.has_more or not page.next_page_token:
+            break
+        next_page_token = page.next_page_token
+    return voices
 
 class KokoroEngine(TTSEngine):
     def __init__(self, config: TTSConfig, voice_id: str):
@@ -174,11 +313,14 @@ class SAPIEngine(TTSEngine):
 def create_tts_engine(config: TTSConfig, voice_id: Optional[str] = None) -> TTSEngine:
     voice_id = voice_id or config.voice
     engine_type = config.engine.lower()
-    if "edge" in engine_type:
+    if engine_type == "edge":
         return EdgeTTSEngine(config, voice_id)
-    elif "kokoro" in engine_type:
+    if engine_type == "elevenlabs":
+        return ElevenLabsEngine(config, voice_id)
+    if engine_type == "kokoro":
         return KokoroEngine(config, voice_id)
-    elif "piper" in engine_type:
+    if engine_type == "piper":
         return PiperEngine(config, voice_id)
-    else:
+    if engine_type == "sapi":
         return SAPIEngine(config, voice_id)
+    raise ValueError(f"Unsupported TTS engine: {config.engine}")
